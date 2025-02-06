@@ -1,7 +1,8 @@
 import subprocess
 import time
 import os
-from transformers import pipeline, set_seed
+import shutil
+from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer, set_seed
 
 # Define your custom cache directory.
 CACHE_DIR = "./model_cache"
@@ -16,12 +17,17 @@ class CodeGenerator:
         :param max_length: The maximum number of tokens to generate.
         :param seed: Seed for reproducibility.
         """
-        # When using GPU, device=0 (if you have one GPU available).
+        # Load the model and tokenizer explicitly with the custom cache directory.
+        self.model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir=CACHE_DIR)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=CACHE_DIR)
+        
+        # Initialize the text-generation pipeline using the loaded model and tokenizer.
+        # device=0 ensures the use of the GPU.
         self.generator = pipeline(
             'text-generation',
-            model=model_name,
-            device=0,  # Use GPU
-            cache_dir=CACHE_DIR  # Download models to our custom cache directory.
+            model=self.model,
+            tokenizer=self.tokenizer,
+            device=0  # Use GPU (ensure your GPU is available and configured correctly)
         )
         set_seed(seed)
         self.max_length = max_length
@@ -121,6 +127,16 @@ def iterative_code_generation(initial_prompt: str, max_attempts: int = 3):
 
     print("Max attempts reached. Could not generate working code.")
     return None
+
+def clear_cache(cache_dir=CACHE_DIR):
+    """
+    Clear the model cache by deleting the cache directory.
+    """
+    if os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir)
+        print(f"Cleared cache at {cache_dir}.")
+    else:
+        print(f"No cache directory found at {cache_dir}.")
 
 def main():
     # Define the initial prompt to generate a codenode that performs addition.
