@@ -8,36 +8,30 @@ from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer, set_seed
 CACHE_DIR = "./model_cache"
 
 class CodeGenerator:
-    def __init__(self, model_name: str = "stabilityai/stable-code-instruct-3b", max_length: int = 2048, seed: int = 42):
+    def __init__(self, model_name: str = "stabilityai/stable-code-instruct-3b", max_length: int = 256, seed: int = 42):
         """
         Initialize the CodeGenerator with the specified model.
-        This version uses the GPU (if available) and downloads model files to a custom cache directory.
-        
-        :param model_name: The Hugging Face model identifier.
-        :param max_length: The maximum number of tokens to generate.
-        :param seed: Seed for reproducibility.
+        Uses the GPU (if available) and caches the model files to a custom directory.
         """
-        # Explicitly load the model and tokenizer with a custom cache directory.
+        # Load model and tokenizer explicitly with cache_dir.
         self.model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir=CACHE_DIR)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=CACHE_DIR)
         
-        # Initialize the text-generation pipeline with GPU support (device=0).
+        # Create a text-generation pipeline using the loaded model and tokenizer.
         self.generator = pipeline(
             'text-generation',
             model=self.model,
             tokenizer=self.tokenizer,
-            device=0
+            device=0  # Force GPU usage (ensure GPU is available)
         )
         set_seed(seed)
         self.max_length = max_length
 
     def generate_code(self, prompt: str) -> str:
         """
-        Generate code based on the input prompt.
-        The model is instructed to output code between the markers:
-            <<<CODE>>> and <<<END CODE>>>
-        :param prompt: A text prompt describing the code to generate.
-        :return: A string containing the extracted generated Python code.
+        Generate Python code from the given prompt.
+        The prompt instructs the model to output only valid Python code between the markers:
+        <<<CODE>>> and <<<END CODE>>>.
         """
         generated = self.generator(
             prompt,
@@ -51,17 +45,17 @@ class CodeGenerator:
         start_marker = "<<<CODE>>>"
         end_marker = "<<<END CODE>>>"
         
-        # Attempt to extract code between the markers.
+        # Extract code between markers.
         if start_marker in text and end_marker in text:
             code = text.split(start_marker, 1)[1].split(end_marker, 1)[0].strip()
         else:
-            # Fallback: remove the prompt and any extraneous markdown formatting.
+            # Fallback: try to remove the prompt text if markers are missing.
             code = text.replace(prompt, "").strip()
         return code
 
 def write_code_to_file(code: str, filename: str = "main.py"):
     """
-    Write the generated code to a file.
+    Write the generated code to the specified file.
     """
     with open(filename, "w") as file:
         file.write(code)
@@ -69,11 +63,9 @@ def write_code_to_file(code: str, filename: str = "main.py"):
 
 def test_generated_code(filename: str = "main.py") -> (bool, str):
     """
-    Execute the code in a subprocess and capture any errors.
-    :return: A tuple of (success flag, output or error message)
+    Execute the generated code in a subprocess and return the success flag and output or error.
     """
     try:
-        # Execute the file with a timeout of 10 seconds.
         result = subprocess.run(["python", filename], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             return False, result.stderr
@@ -83,19 +75,20 @@ def test_generated_code(filename: str = "main.py") -> (bool, str):
 
 def iterative_code_generation(initial_prompt: str, max_attempts: int = 3):
     """
-    Generate code iteratively: generate code, test it, and if errors occur, inform the model.
-    :param initial_prompt: The initial prompt for code generation.
-    :param max_attempts: Maximum number of attempts to generate error‑free code.
-    :return: The final working code or None if unsuccessful.
+    Iteratively generate code using the model, test it, and if errors occur,
+    supply the error details to prompt the model for a correction.
     """
     generator = CodeGenerator()
     
-    # Construct the prompt using robust code markers.
+    # Construct a revised prompt template.
+    # Note: We instruct the model to output ONLY valid Python code between the markers,
+    # and nothing else.
     prompt = (
-        initial_prompt +
-        "\n<<<CODE>>>\n" +
-        "# IMPORTANT: Output only the Python code between the markers <<<CODE>>> and <<<END CODE>>>. " +
-        "Do not include any markdown formatting, comments, or additional text outside these markers.\n" +
+        "You are a Python code generation assistant. "
+        "Do not include any explanations, comments, or additional text outside of the code markers. "
+        "Output only valid Python code between the markers below.\n\n"
+        f"{initial_prompt}\n\n"
+        "<<<CODE>>>\n"
         "<<<END CODE>>>"
     )
 
@@ -119,14 +112,15 @@ def iterative_code_generation(initial_prompt: str, max_attempts: int = 3):
         else:
             print("\nTest failed with error:")
             print(output)
-            # Append error details to the prompt for a corrected version.
+            # Update the prompt to include the error details.
             prompt = (
-                initial_prompt +
-                "\n<<<CODE>>>\n" +
-                "# The previously generated code resulted in the following error when executed:\n" +
-                f"# {output.strip()}\n" +
-                "# Please provide a corrected version of the code between the markers <<<CODE>>> and <<<END CODE>>>. " +
-                "Do not include any markdown formatting or extra text outside these markers.\n" +
+                "You are a Python code generation assistant. "
+                "Do not include any explanations, comments, or additional text outside of the code markers. "
+                "Output only valid Python code between the markers below.\n\n"
+                f"{initial_prompt}\n\n"
+                "<<<CODE>>>\n"
+                f"# The previously generated code resulted in this error when executed:\n"
+                f"# {output.strip()}\n"
                 "<<<END CODE>>>"
             )
             time.sleep(1)
@@ -147,11 +141,9 @@ def clear_cache(cache_dir=CACHE_DIR):
 def main():
     # Define the initial prompt to generate a codenode that performs addition.
     initial_prompt = (
-        "Build me a codenode that does the addition of two numbers. " +
-        "Write the complete code for this functionality in a file named main.py. " +
-        "The code should include:\n" +
-        "  - A function 'add(a, b)' that returns the sum of a and b.\n" +
-        "  - A main block that demonstrates its usage by printing the result of add(2, 3).\n"
+        "Build me a codenode that does the addition of two numbers. "
+        "The code should include a function named 'add(a, b)' that returns the sum of a and b, "
+        "and a main block that demonstrates its usage by printing the result of add(2, 3)."
     )
     
     final_code = iterative_code_generation(initial_prompt, max_attempts=3)
