@@ -9,7 +9,7 @@ from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer, set_seed
 CACHE_DIR = "./model_cache"
 
 class CodeGenerator:
-    def __init__(self, model_name: str = "stabilityai/stable-code-instruct-3b", max_length: int = 256, seed: int = 42):
+    def __init__(self, model_name: str = "deepseek-ai/DeepSeek-Coder-V2-Instruct", max_length: int = 2048, seed: int = 42):
         """
         Initialize the CodeGenerator with the specified model.
         Uses GPU if available and caches model files in a custom directory.
@@ -66,7 +66,7 @@ def write_code_to_file(code: str, filename: str = "main.py"):
         file.write(code)
     print(f"Code written to {filename}")
 
-def test_generated_code(filename: str = "main.py") -> (bool, str):
+def test_generated_code(filename: str = "main.py") -> tuple[bool, str]:
     """
     Execute the generated code in a subprocess and return a success flag along with output or error.
     """
