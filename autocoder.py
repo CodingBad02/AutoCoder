@@ -3,17 +3,25 @@ import time
 import os
 from transformers import pipeline, set_seed
 
+# Define your custom cache directory.
+CACHE_DIR = "./model_cache"
+
 class CodeGenerator:
     def __init__(self, model_name: str = "stabilityai/stable-code-instruct-3b", max_length: int = 256, seed: int = 42):
         """
         Initialize the CodeGenerator with the specified model.
+        This version uses the GPU (if available) and downloads model files to a custom cache directory.
+        
         :param model_name: The Hugging Face model identifier.
         :param max_length: The maximum number of tokens to generate.
         :param seed: Seed for reproducibility.
         """
+        # When using GPU, device=0 (if you have one GPU available).
         self.generator = pipeline(
             'text-generation',
-            model=model_name
+            model=model_name,
+            device=0,  # Use GPU
+            cache_dir=CACHE_DIR  # Download models to our custom cache directory.
         )
         set_seed(seed)
         self.max_length = max_length
