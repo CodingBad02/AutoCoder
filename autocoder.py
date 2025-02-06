@@ -8,7 +8,7 @@ from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer, set_seed
 CACHE_DIR = "./model_cache"
 
 class CodeGenerator:
-    def __init__(self, model_name: str = "stabilityai/stable-code-instruct-3b", max_length: int = 256, seed: int = 42):
+    def __init__(self, model_name: str = "stabilityai/stable-code-instruct-3b", max_length: int = 2048, seed: int = 42):
         """
         Initialize the CodeGenerator with the specified model.
         This version uses the GPU (if available) and downloads model files to a custom cache directory.
