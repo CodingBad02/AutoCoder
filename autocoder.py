@@ -17,17 +17,16 @@ class CodeGenerator:
         :param max_length: The maximum number of tokens to generate.
         :param seed: Seed for reproducibility.
         """
-        # Load the model and tokenizer explicitly with the custom cache directory.
+        # Explicitly load the model and tokenizer with a custom cache directory.
         self.model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir=CACHE_DIR)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=CACHE_DIR)
         
-        # Initialize the text-generation pipeline using the loaded model and tokenizer.
-        # device=0 ensures the use of the GPU.
+        # Initialize the text-generation pipeline with GPU support (device=0).
         self.generator = pipeline(
             'text-generation',
             model=self.model,
             tokenizer=self.tokenizer,
-            device=0  # Use GPU (ensure your GPU is available and configured correctly)
+            device=0
         )
         set_seed(seed)
         self.max_length = max_length
@@ -35,23 +34,28 @@ class CodeGenerator:
     def generate_code(self, prompt: str) -> str:
         """
         Generate code based on the input prompt.
+        The model is instructed to output code between the markers:
+            <<<CODE>>> and <<<END CODE>>>
         :param prompt: A text prompt describing the code to generate.
-        :return: A string containing the generated code.
+        :return: A string containing the extracted generated Python code.
         """
         generated = self.generator(
             prompt,
             max_length=self.max_length,
             num_return_sequences=1,
-            truncation=True  # Ensure input is truncated appropriately.
+            truncation=True
         )
         text = generated[0]['generated_text']
-
-        # Look for our marker and only return the code that follows.
-        marker = "# CODE START"
-        if marker in text:
-            code = text.split(marker, 1)[1].strip()
+        
+        # Define robust markers.
+        start_marker = "<<<CODE>>>"
+        end_marker = "<<<END CODE>>>"
+        
+        # Attempt to extract code between the markers.
+        if start_marker in text and end_marker in text:
+            code = text.split(start_marker, 1)[1].split(end_marker, 1)[0].strip()
         else:
-            # Fallback: try to remove the original prompt if it's echoed.
+            # Fallback: remove the prompt and any extraneous markdown formatting.
             code = text.replace(prompt, "").strip()
         return code
 
@@ -72,7 +76,6 @@ def test_generated_code(filename: str = "main.py") -> (bool, str):
         # Execute the file with a timeout of 10 seconds.
         result = subprocess.run(["python", filename], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
-            # There was an error executing the code.
             return False, result.stderr
         return True, result.stdout
     except Exception as e:
@@ -87,11 +90,13 @@ def iterative_code_generation(initial_prompt: str, max_attempts: int = 3):
     """
     generator = CodeGenerator()
     
-    # Modify the prompt: add a clear marker and explicit instructions.
+    # Construct the prompt using robust code markers.
     prompt = (
         initial_prompt +
-        "\n# CODE START\n" +
-        "# IMPORTANT: Only output the Python code after the '# CODE START' marker. Do not repeat the prompt or add extra commentary."
+        "\n<<<CODE>>>\n" +
+        "# IMPORTANT: Output only the Python code between the markers <<<CODE>>> and <<<END CODE>>>. " +
+        "Do not include any markdown formatting, comments, or additional text outside these markers.\n" +
+        "<<<END CODE>>>"
     )
 
     for attempt in range(1, max_attempts + 1):
@@ -102,7 +107,7 @@ def iterative_code_generation(initial_prompt: str, max_attempts: int = 3):
         code = generator.generate_code(prompt)
         print("\nGenerated Code:\n", code)
         
-        # Write code to file.
+        # Write the generated code to main.py.
         write_code_to_file(code)
         
         # Test the generated code.
@@ -114,15 +119,16 @@ def iterative_code_generation(initial_prompt: str, max_attempts: int = 3):
         else:
             print("\nTest failed with error:")
             print(output)
-            # Append the error details to the prompt and ask the model to fix the code.
+            # Append error details to the prompt for a corrected version.
             prompt = (
                 initial_prompt +
-                "\n# CODE START\n" +
-                "# The previous generated code resulted in the following error when executed:\n"
-                f"# {output.strip()}\n"
-                "# Please provide a corrected version of the code. Only output the Python code after the marker."
+                "\n<<<CODE>>>\n" +
+                "# The previously generated code resulted in the following error when executed:\n" +
+                f"# {output.strip()}\n" +
+                "# Please provide a corrected version of the code between the markers <<<CODE>>> and <<<END CODE>>>. " +
+                "Do not include any markdown formatting or extra text outside these markers.\n" +
+                "<<<END CODE>>>"
             )
-            # Pause briefly before retrying.
             time.sleep(1)
 
     print("Max attempts reached. Could not generate working code.")
@@ -141,9 +147,10 @@ def clear_cache(cache_dir=CACHE_DIR):
 def main():
     # Define the initial prompt to generate a codenode that performs addition.
     initial_prompt = (
-        "Build me a codenode that does the addition of two numbers. Write the complete code for this functionality in a file named main.py. "
-        "The code should include:\n"
-        "  - A function `add(a, b)` that returns the sum of a and b.\n"
+        "Build me a codenode that does the addition of two numbers. " +
+        "Write the complete code for this functionality in a file named main.py. " +
+        "The code should include:\n" +
+        "  - A function 'add(a, b)' that returns the sum of a and b.\n" +
         "  - A main block that demonstrates its usage by printing the result of add(2, 3).\n"
     )
     
